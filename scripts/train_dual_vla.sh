@@ -58,6 +58,7 @@ run_dynamic() {
     $COMMON_GPU \
     --policy.system2_mode=dynamic \
     --policy.system2_update_freq=10 \
+    --job_name=dual_vla_dynamic \
     --output_dir=outputs/dual_vla_dynamic
 }
 
@@ -66,6 +67,7 @@ run_frozen() {
   uv run lerobot-train \
     $COMMON_GPU \
     --policy.system2_mode=frozen_initial \
+    --job_name=dual_vla_frozen \
     --output_dir=outputs/dual_vla_frozen
 }
 
@@ -74,6 +76,7 @@ run_disabled() {
   uv run lerobot-train \
     $COMMON_GPU \
     --policy.system2_mode=disabled \
+    --job_name=dual_vla_disabled \
     --output_dir=outputs/dual_vla_disabled
 }
 
