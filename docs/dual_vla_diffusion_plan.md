@@ -17,8 +17,15 @@ If System 2 improves both, it suggests the benefit is semantic (task understandi
 
 ## Architecture
 
-### System 2 (unchanged)
-Frozen CLIP ViT-B/16. Returns `pooler_output` (768-dim). Same three ablation modes:
+### System 2 (unchanged from ACT variant)
+Frozen CLIP ViT-B/16. Uses both encoders in the shared 512-d projection space:
+```
+vision_feat = clip.get_image_features(img)   # (B, 512)
+text_feat   = clip.get_text_features(tokens) # (1, 512), cached once per episode
+ctx         = (vision_feat + text_feat) / 2  # (B, 512)
+```
+
+Same three ablation modes:
 - `dynamic` — re-encodes every 10 env steps
 - `frozen_initial` — encodes once at episode reset
 - `disabled` — zero vector (pure Diffusion Policy baseline)
@@ -34,8 +41,9 @@ global_cond = [robot_state, image_features(ResNet18), env_state]
 System 2 is injected by appending a projected CLIP embedding to this vector:
 
 ```
-system2_proj = Linear(768, 256)  # frozen input, trained projection
-global_cond  = [robot_state, image_features, system2_proj(clip_embedding)]
+system2_proj = Linear(512, 256)  # frozen input, trained projection
+global_cond  = [robot_state, image_features, system2_proj(clip_ctx)]
+# clip_ctx = (vision_feat + text_feat) / 2, both 512-d from CLIPModel
 ```
 
 No changes to the U-Net itself. The `global_cond_dim` parameter at U-Net init simply increases by 256.
@@ -81,7 +89,7 @@ class DualVLADiffusionConfig(DiffusionConfig):
     system2_mode: str = "dynamic"
     system2_update_freq: int = 10
     clip_model_name: str = "openai/clip-vit-base-patch16"
-    clip_embed_dim: int = 768
+    clip_embed_dim: int = 512  # CLIPModel projected dim, shared vision-text space
     system2_proj_dim: int = 256
 
     # Overrides for LIBERO
@@ -97,7 +105,7 @@ class DualVLADiffusionConfig(DiffusionConfig):
 
 Subclass `DiffusionPolicy`, override three methods:
 
-1. `__init__`: add `self.system2` (frozen CLIP), `self.system2_proj = Linear(768, system2_proj_dim)`, increase `global_cond_dim` by `system2_proj_dim` when constructing the U-Net.
+1. `__init__`: add `self.clip` (`CLIPModel`, frozen), `self.clip_tokenizer`, `self.system2_proj = Linear(512, system2_proj_dim)`, increase `global_cond_dim` by `system2_proj_dim` when constructing the U-Net.
 
 2. `_prepare_global_conditioning(batch)`: call `encode_system2()`, project, append to `global_cond_feats` before the `torch.cat`.
 
