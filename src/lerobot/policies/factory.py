@@ -46,6 +46,7 @@ from lerobot.utils.feature_utils import dataset_to_policy_features
 
 from .act.configuration_act import ACTConfig
 from .dual_vla.configuration_dual_vla import DualVLAConfig
+from .dual_vla_diffusion.configuration_dual_vla_diffusion import DualVLADiffusionConfig
 from .diffusion.configuration_diffusion import DiffusionConfig
 from .eo1.configuration_eo1 import EO1Config
 from .gaussian_actor.configuration_gaussian_actor import GaussianActorConfig
@@ -103,6 +104,10 @@ def get_policy_class(name: str) -> type[PreTrainedPolicy]:
         from .tdmpc.modeling_tdmpc import TDMPCPolicy
 
         return TDMPCPolicy
+    elif name == "dual_vla_diffusion":
+        from .dual_vla_diffusion.modeling_dual_vla_diffusion import DualVLADiffusionPolicy
+
+        return DualVLADiffusionPolicy
     elif name == "diffusion":
         from .diffusion.modeling_diffusion import DiffusionPolicy
 
@@ -195,6 +200,8 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
     """
     if policy_type == "tdmpc":
         return TDMPCConfig(**kwargs)
+    elif policy_type == "dual_vla_diffusion":
+        return DualVLADiffusionConfig(**kwargs)
     elif policy_type == "diffusion":
         return DiffusionConfig(**kwargs)
     elif policy_type == "act":
@@ -334,6 +341,14 @@ def make_pre_post_processors(
         from .tdmpc.processor_tdmpc import make_tdmpc_pre_post_processors
 
         processors = make_tdmpc_pre_post_processors(
+            config=policy_cfg,
+            dataset_stats=kwargs.get("dataset_stats"),
+        )
+
+    elif isinstance(policy_cfg, DualVLADiffusionConfig):
+        from .diffusion.processor_diffusion import make_diffusion_pre_post_processors
+
+        processors = make_diffusion_pre_post_processors(
             config=policy_cfg,
             dataset_stats=kwargs.get("dataset_stats"),
         )
