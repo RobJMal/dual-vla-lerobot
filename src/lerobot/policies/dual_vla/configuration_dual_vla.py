@@ -22,7 +22,7 @@ class DualVLAConfig(PreTrainedConfig):
     system2_mode: str = "dynamic"
     system2_update_freq: int = 10
     clip_model_name: str = "openai/clip-vit-base-patch16"
-    clip_embed_dim: int = 768  # CLIPVisionModel pooler_output dim for ViT-B/16
+    clip_embed_dim: int = 512  # CLIPModel projected dim (get_image/text_features), shared vision-text space
 
     # ── Observation / action structure ────────────────────────────────────────
     n_obs_steps: int = 1
