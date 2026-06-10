@@ -36,14 +36,13 @@ class DualVLADiffusionModel(DiffusionModel):
         # It creates a U-Net with the base global_cond_dim; we replace it below.
         super().__init__(config)
 
-        # ── System 2: frozen CLIP (vision + text encoders) ────────────────────
+        # ── System 2: frozen CLIP vision encoder ──────────────────────────────
         if config.system2_mode != "disabled":
-            from transformers import CLIPModel, CLIPTokenizer
+            from transformers import CLIPVisionModel
 
-            self.clip = CLIPModel.from_pretrained(config.clip_model_name)
+            self.clip = CLIPVisionModel.from_pretrained(config.clip_model_name)
             for p in self.clip.parameters():
                 p.requires_grad_(False)
-            self.clip_tokenizer = CLIPTokenizer.from_pretrained(config.clip_model_name)
             self.register_buffer(
                 "clip_pixel_mean",
                 torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1),
@@ -75,8 +74,8 @@ class DualVLADiffusionModel(DiffusionModel):
             self.unet = torch.compile(self.unet, mode=config.compile_mode)
 
     @torch.no_grad()
-    def encode_system2(self, img: Tensor, text_feat: Tensor | None = None) -> Tensor:
-        """Return (B, clip_embed_dim) context combining vision and optional language.
+    def encode_system2(self, img: Tensor) -> Tensor:
+        """Return (B, clip_embed_dim) context from the primary camera image.
 
         For ``disabled`` mode returns zeros so the U-Net conditioning is inert.
         """
@@ -85,20 +84,7 @@ class DualVLADiffusionModel(DiffusionModel):
         img_resized = F.interpolate(img.float(), size=(224, 224), mode="bilinear", align_corners=False)
         img_resized = img_resized.clamp(0.0, 1.0)
         img_clip = (img_resized - self.clip_pixel_mean) / self.clip_pixel_std
-        vision_feat = self.clip.get_image_features(pixel_values=img_clip)  # (B, 512)
-        if text_feat is not None:
-            return (vision_feat + text_feat.expand_as(vision_feat)) / 2
-        return vision_feat
-
-    @torch.no_grad()
-    def encode_text(self, text: str, device: torch.device) -> Tensor:
-        """Return (1, clip_embed_dim) text embedding for a task description string."""
-        if self.config.system2_mode == "disabled":
-            return torch.zeros(1, self.config.clip_embed_dim, device=device)
-        tokens = self.clip_tokenizer(
-            [text], padding=True, truncation=True, return_tensors="pt"
-        ).to(device)
-        return self.clip.get_text_features(**tokens)  # (1, 512)
+        return self.clip(pixel_values=img_clip).pooler_output  # (B, clip_embed_dim)
 
     def _prepare_global_conditioning(self, batch: dict[str, Tensor]) -> Tensor:
         """Encode observations + System 2 context into the U-Net conditioning vector."""
@@ -161,23 +147,13 @@ class DualVLADiffusionPolicy(DiffusionPolicy):
         self.diffusion = DualVLADiffusionModel(config)
         self._step_count = 0
         self._cached_system2_ctx: Tensor | None = None
-        self._cached_text_feat: Tensor | None = None
         self.reset()
-
-    def set_task_description(self, text: str) -> None:
-        """Pre-compute CLIP text embedding for the current task.
-
-        Call once per episode after env.reset(), passing env.task_description.
-        """
-        device = next(self.parameters()).device
-        self._cached_text_feat = self.diffusion.encode_text(text, device)
 
     def reset(self):
         """Clear observation/action queues and System 2 cache. Call on env.reset()."""
         super().reset()  # DiffusionPolicy.reset() rebuilds self._queues
         self._step_count = 0
         self._cached_system2_ctx = None
-        self._cached_text_feat: Tensor | None = None
 
     def _should_refresh_system2(self) -> bool:
         if self.config.system2_mode == "disabled":
@@ -203,9 +179,7 @@ class DualVLADiffusionPolicy(DiffusionPolicy):
                 img = batch[OBS_IMAGES]
                 if img.ndim == 5:  # (B, n_cams, C, H, W) — take first camera
                     img = img[:, 0]
-                self._cached_system2_ctx = self.diffusion.encode_system2(
-                    img, text_feat=self._cached_text_feat
-                )
+                self._cached_system2_ctx = self.diffusion.encode_system2(img)
 
             # Thread the cached context into the model for this prediction.
             self.diffusion._system2_ctx = self._cached_system2_ctx

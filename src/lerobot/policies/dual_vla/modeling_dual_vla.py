@@ -62,22 +62,11 @@ class DualVLAPolicy(PreTrainedPolicy):
             },
         ]
 
-    def set_task_description(self, text: str) -> None:
-        """Pre-compute CLIP text embedding for the current task.
-
-        Call this once per episode after env.reset(), passing env.task_description.
-        The embedding is cached and combined with the live vision features in
-        encode_system2() — no extra CLIP text pass per step.
-        """
-        device = next(self.parameters()).device
-        self._cached_text_feat = self.model.encode_text(text, device)
-
     def reset(self):
         """Call at every episode reset."""
         self._action_queue = deque([], maxlen=self.config.n_action_steps)
         self._step_count = 0
         self._cached_task_ctx: Tensor | None = None
-        self._cached_text_feat: Tensor | None = None
 
     def _should_refresh_system2(self) -> bool:
         if self.config.system2_mode == "disabled":
@@ -97,8 +86,7 @@ class DualVLAPolicy(PreTrainedPolicy):
         if len(self._action_queue) == 0:
             if self._should_refresh_system2():
                 self._cached_task_ctx = self.model.encode_system2(
-                    batch[OBS_IMAGES][0],
-                    text_feat=self._cached_text_feat,
+                    batch[OBS_IMAGES][0]
                 )
 
             actions = self.model(batch, precomputed_ctx=self._cached_task_ctx)[0]
@@ -156,14 +144,13 @@ class DualSystemVLA(nn.Module):
         super().__init__()
         self.config = config
 
-        # ── System 2: frozen CLIP (vision + text encoders) ────────────────────
+        # ── System 2: frozen CLIP vision encoder ──────────────────────────────
         if config.system2_mode != "disabled":
-            from transformers import CLIPModel, CLIPTokenizer
+            from transformers import CLIPVisionModel
 
-            self.clip = CLIPModel.from_pretrained(config.clip_model_name)
+            self.clip = CLIPVisionModel.from_pretrained(config.clip_model_name)
             for p in self.clip.parameters():
                 p.requires_grad_(False)
-            self.clip_tokenizer = CLIPTokenizer.from_pretrained(config.clip_model_name)
             # CLIP canonical normalisation (applied to [0,1]-range images)
             self.register_buffer(
                 "clip_pixel_mean",
@@ -240,42 +227,26 @@ class DualSystemVLA(nn.Module):
 
     # ── System 2 ──────────────────────────────────────────────────────────────
 
-    def encode_system2(self, img: Tensor, text_feat: Tensor | None = None) -> Tensor:
-        """Return a (B, clip_embed_dim) task context vector.
+    def encode_system2(self, img: Tensor) -> Tensor:
+        """Return a (B, clip_embed_dim) task context vector from the primary camera image.
 
-        Combines vision and language in CLIP's shared 512-d embedding space:
-            context = (vision_feat + text_feat) / 2  when text_feat is provided
-            context = vision_feat                     otherwise (training fallback)
-
-        Args:
-            img: Primary camera image, any normalisation — resized to 224×224 internally.
-            text_feat: Pre-computed (1, clip_embed_dim) text embedding from
-                ``encode_text()``. Pass None to use vision only.
+        The image is expected in the range the dataset normalizer produces. We resize
+        to 224×224 and apply CLIP's own normalisation on top. For a frozen encoder this
+        double-normalisation has negligible impact on feature quality.
         """
         if self.config.system2_mode == "disabled":
             return torch.zeros(img.shape[0], self.config.clip_embed_dim, device=img.device)
 
+        # Resize to CLIP's expected resolution
         img_resized = F.interpolate(img.float(), size=(224, 224), mode="bilinear", align_corners=False)
+        # Clamp to approximate [0, 1] and apply CLIP normalisation
         img_resized = img_resized.clamp(0.0, 1.0)
         img_clip = (img_resized - self.clip_pixel_mean) / self.clip_pixel_std
 
         with torch.no_grad():
-            vision_feat = self.clip.get_image_features(pixel_values=img_clip)  # (B, 512)
+            pooler_output = self.clip(pixel_values=img_clip).pooler_output  # (B, 512)
 
-        if text_feat is not None:
-            return (vision_feat + text_feat.expand_as(vision_feat)) / 2
-
-        return vision_feat
-
-    @torch.no_grad()
-    def encode_text(self, text: str, device: torch.device) -> Tensor:
-        """Return (1, clip_embed_dim) text embedding for a task description string."""
-        if self.config.system2_mode == "disabled":
-            return torch.zeros(1, self.config.clip_embed_dim, device=device)
-        tokens = self.clip_tokenizer(
-            [text], padding=True, truncation=True, return_tensors="pt"
-        ).to(device)
-        return self.clip.get_text_features(**tokens)  # (1, 512)
+        return pooler_output
 
     # ── Forward ───────────────────────────────────────────────────────────────
 
