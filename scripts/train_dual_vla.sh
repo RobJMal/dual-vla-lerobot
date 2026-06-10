@@ -34,6 +34,8 @@ COMMON_GPU="
   --eval_freq=20000
   --save_freq=20000
   --log_freq=200
+  --wandb.enable=true
+  --wandb.project=dual-vla-lerobot
 "
 
 run_cpu_test() {
