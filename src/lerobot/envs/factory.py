@@ -52,6 +52,18 @@ def make_env_pre_post_processors(
 
         return make_xvla_libero_pre_post_processors()
 
+    from lerobot.policies.dual_vla.configuration_dual_vla import DualVLAConfig
+
+    if isinstance(policy_cfg, DualVLAConfig):
+        from lerobot.envs.configs import LiberoEnv as LiberoEnvConfig
+        from lerobot.processor import LiberoProcessorStep, PolicyProcessorPipeline
+
+        if isinstance(env_cfg, LiberoEnvConfig):
+            # dual_vla training did not apply the 180° image flip, so neither should eval
+            pre = PolicyProcessorPipeline(steps=[LiberoProcessorStep(flip_images=False)])
+            post = PolicyProcessorPipeline(steps=[])
+            return pre, post
+
     return env_cfg.get_env_processors()
 
 
