@@ -555,18 +555,26 @@ def make_policy(
         features = env_to_policy_features(env_cfg)
 
     cfg.output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    if not cfg.input_features:
-        if cfg.pretrained_path:
-            try:
-                pretrained_cfg = PreTrainedConfig.from_pretrained(str(cfg.pretrained_path))
-                if pretrained_cfg.input_features:
-                    cfg.input_features = pretrained_cfg.input_features
-                if pretrained_cfg.output_features:
-                    cfg.output_features = pretrained_cfg.output_features
-            except Exception as e:
-                logging.debug(f"Could not load features from pretrained config: {e}")
-        if not cfg.input_features:
-            cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
+    if cfg.pretrained_path:
+        try:
+            pretrained_cfg = PreTrainedConfig.from_pretrained(str(cfg.pretrained_path))
+            # Replace the cmd config with the checkpoint config so all architecture params
+            # (clip_embed_dim, dim_model, latent_dim, etc.) match the saved weights exactly.
+            # Only preserve runtime-only fields from the command line.
+            pretrained_cfg.device = cfg.device
+            pretrained_cfg.pretrained_path = cfg.pretrained_path
+            pretrained_cfg.output_features = cfg.output_features
+            if not pretrained_cfg.input_features:
+                pretrained_cfg.input_features = {
+                    key: ft for key, ft in features.items() if key not in pretrained_cfg.output_features
+                }
+            cfg = pretrained_cfg
+        except Exception as e:
+            logging.debug(f"Could not load config from pretrained path: {e}")
+            if not cfg.input_features:
+                cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
+    elif not cfg.input_features:
+        cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
 
     # Store action feature names for relative_exclude_joints support
     if ds_meta is not None and hasattr(cfg, "action_feature_names"):

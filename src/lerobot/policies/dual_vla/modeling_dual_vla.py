@@ -144,11 +144,18 @@ class DualSystemVLA(nn.Module):
         super().__init__()
         self.config = config
 
-        # ── System 2: frozen CLIP vision encoder ──────────────────────────────
+        # ── System 2: frozen CLIP encoder ─────────────────────────────────────
+        # clip_embed_dim=512 → full CLIPModel.get_image_features() (ViT-B/16 projected)
+        # clip_embed_dim=768 → CLIPVisionModel.pooler_output (raw ViT-B/16 hidden)
         if config.system2_mode != "disabled":
-            from transformers import CLIPVisionModel
+            if config.clip_embed_dim == 512:
+                from transformers import CLIPModel
 
-            self.clip = CLIPVisionModel.from_pretrained(config.clip_model_name)
+                self.clip = CLIPModel.from_pretrained(config.clip_model_name)
+            else:
+                from transformers import CLIPVisionModel
+
+                self.clip = CLIPVisionModel.from_pretrained(config.clip_model_name)
             for p in self.clip.parameters():
                 p.requires_grad_(False)
             # CLIP canonical normalisation (applied to [0,1]-range images)
@@ -244,7 +251,10 @@ class DualSystemVLA(nn.Module):
         img_clip = (img_resized - self.clip_pixel_mean) / self.clip_pixel_std
 
         with torch.no_grad():
-            pooler_output = self.clip(pixel_values=img_clip).pooler_output  # (B, 512)
+            if self.config.clip_embed_dim == 512:
+                pooler_output = self.clip.get_image_features(pixel_values=img_clip)  # (B, 512)
+            else:
+                pooler_output = self.clip(pixel_values=img_clip).pooler_output  # (B, 768)
 
         return pooler_output
 
