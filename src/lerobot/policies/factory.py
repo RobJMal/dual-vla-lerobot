@@ -556,7 +556,17 @@ def make_policy(
 
     cfg.output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
     if not cfg.input_features:
-        cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
+        if cfg.pretrained_path:
+            try:
+                pretrained_cfg = PreTrainedConfig.from_pretrained(str(cfg.pretrained_path))
+                if pretrained_cfg.input_features:
+                    cfg.input_features = pretrained_cfg.input_features
+                if pretrained_cfg.output_features:
+                    cfg.output_features = pretrained_cfg.output_features
+            except Exception as e:
+                logging.debug(f"Could not load features from pretrained config: {e}")
+        if not cfg.input_features:
+            cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
 
     # Store action feature names for relative_exclude_joints support
     if ds_meta is not None and hasattr(cfg, "action_feature_names"):
