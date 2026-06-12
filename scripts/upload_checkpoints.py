@@ -22,7 +22,10 @@ for variant in VARIANTS:
 
     files = sorted([
         f for f in base.rglob("*")
-        if f.is_file() and ".cache" not in str(f)
+        if f.is_file()
+        and ".cache" not in str(f)
+        and "optimizer_state" not in f.name
+        and "training_state" not in str(f)
     ])
     repo_id = f"{HF_USER}/dual-vla-{variant}"
     print(f"\n=== {variant}: {len(files)} files → {repo_id} ===", flush=True)
