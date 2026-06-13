@@ -49,6 +49,7 @@ for base in dirs:
         continue
 
     repo_id = f"{HF_USER}/dual-vla-{base.name}"
+    api.create_repo(repo_id=repo_id, repo_type="model", exist_ok=True)
     print(f"\n=== {base.name}: {len(files)} files → {repo_id} ===", flush=True)
 
     for i, fp in enumerate(files):
