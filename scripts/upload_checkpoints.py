@@ -1,34 +1,55 @@
 """Upload trained dual-VLA checkpoints to HuggingFace Hub.
 
+Discovers all subdirectories in OUTPUTS_DIR and uploads each one to a
+separate HF repo named  <HF_USER>/dual-vla-<dir_name>.  This means
+'spatial_dynamic', 'spatial_frozen', and 'spatial_disabled' each get
+their own repo and never overwrite earlier variants.
+
 Usage:
     uv run python scripts/upload_checkpoints.py
+    uv run python scripts/upload_checkpoints.py --outputs_dir /path/to/outputs
 """
 
-from huggingface_hub import HfApi
-from pathlib import Path
+import argparse
 import time
+from pathlib import Path
+
+from huggingface_hub import HfApi
 
 HF_USER = "RobJMal"
-VARIANTS = ["dynamic", "frozen", "disabled"]
-OUTPUTS_DIR = Path("/workspace/lerobot/outputs")
+DEFAULT_OUTPUTS_DIR = Path("/workspace/dual-vla-lerobot/outputs")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--outputs_dir", type=Path, default=DEFAULT_OUTPUTS_DIR)
+args = parser.parse_args()
+
+OUTPUTS_DIR: Path = args.outputs_dir
+
+if not OUTPUTS_DIR.exists():
+    raise SystemExit(f"outputs_dir not found: {OUTPUTS_DIR}")
+
+dirs = sorted(p for p in OUTPUTS_DIR.iterdir() if p.is_dir())
+if not dirs:
+    raise SystemExit(f"No subdirectories found in {OUTPUTS_DIR}")
+
+print(f"Found {len(dirs)} run(s): {[d.name for d in dirs]}", flush=True)
 
 api = HfApi()
 
-for variant in VARIANTS:
-    base = OUTPUTS_DIR / f"dual_vla_{variant}"
-    if not base.exists():
-        print(f"Skipping {variant} - not found at {base}")
-        continue
-
-    files = sorted([
+for base in dirs:
+    files = sorted(
         f for f in base.rglob("*")
         if f.is_file()
         and ".cache" not in str(f)
         and "optimizer_state" not in f.name
         and "training_state" not in str(f)
-    ])
-    repo_id = f"{HF_USER}/dual-vla-{variant}"
-    print(f"\n=== {variant}: {len(files)} files → {repo_id} ===", flush=True)
+    )
+    if not files:
+        print(f"\nSkipping {base.name} — no files found", flush=True)
+        continue
+
+    repo_id = f"{HF_USER}/dual-vla-{base.name}"
+    print(f"\n=== {base.name}: {len(files)} files → {repo_id} ===", flush=True)
 
     for i, fp in enumerate(files):
         rel = str(fp.relative_to(base))
