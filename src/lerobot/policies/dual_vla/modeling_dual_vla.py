@@ -86,7 +86,7 @@ class DualVLAPolicy(PreTrainedPolicy):
         if len(self._action_queue) == 0:
             if self._should_refresh_system2():
                 self._cached_task_ctx = self.model.encode_system2(
-                    batch[OBS_IMAGES][0]
+                    batch[OBS_IMAGES][0], text=batch.get("task")
                 )
 
             actions = self.model(batch, precomputed_ctx=self._cached_task_ctx)[0]
@@ -144,20 +144,14 @@ class DualSystemVLA(nn.Module):
         super().__init__()
         self.config = config
 
-        # ── System 2: frozen CLIP encoder ─────────────────────────────────────
-        # clip_embed_dim=512 → full CLIPModel.get_image_features() (ViT-B/16 projected)
-        # clip_embed_dim=768 → CLIPVisionModel.pooler_output (raw ViT-B/16 hidden)
+        # ── System 2: frozen CLIP encoder (vision + text) ─────────────────────
         if config.system2_mode != "disabled":
-            if config.clip_embed_dim == 512:
-                from transformers import CLIPModel
+            from transformers import CLIPModel, CLIPTokenizerFast
 
-                self.clip = CLIPModel.from_pretrained(config.clip_model_name)
-            else:
-                from transformers import CLIPVisionModel
-
-                self.clip = CLIPVisionModel.from_pretrained(config.clip_model_name)
+            self.clip = CLIPModel.from_pretrained(config.clip_model_name)
             for p in self.clip.parameters():
                 p.requires_grad_(False)
+            self.clip_tokenizer = CLIPTokenizerFast.from_pretrained(config.clip_model_name)
             # CLIP canonical normalisation (applied to [0,1]-range images)
             self.register_buffer(
                 "clip_pixel_mean",
@@ -234,29 +228,33 @@ class DualSystemVLA(nn.Module):
 
     # ── System 2 ──────────────────────────────────────────────────────────────
 
-    def encode_system2(self, img: Tensor) -> Tensor:
-        """Return a (B, clip_embed_dim) task context vector from the primary camera image.
+    def encode_system2(self, img: Tensor, text: list[str] | None = None) -> Tensor:
+        """Return a (B, clip_embed_dim) task context vector.
 
-        The image is expected in the range the dataset normalizer produces. We resize
-        to 224×224 and apply CLIP's own normalisation on top. For a frozen encoder this
-        double-normalisation has negligible impact on feature quality.
+        When ``text`` is provided (list of B task-description strings), encodes both
+        image and text with CLIP and returns the L2-normalised average, giving the
+        model a semantic task signal. Falls back to image-only when text is absent.
         """
         if self.config.system2_mode == "disabled":
             return torch.zeros(img.shape[0], self.config.clip_embed_dim, device=img.device)
 
-        # Resize to CLIP's expected resolution
+        # Resize to CLIP's expected resolution and apply CLIP normalisation
         img_resized = F.interpolate(img.float(), size=(224, 224), mode="bilinear", align_corners=False)
-        # Clamp to approximate [0, 1] and apply CLIP normalisation
-        img_resized = img_resized.clamp(0.0, 1.0)
-        img_clip = (img_resized - self.clip_pixel_mean) / self.clip_pixel_std
+        img_clip = (img_resized.clamp(0.0, 1.0) - self.clip_pixel_mean) / self.clip_pixel_std
 
         with torch.no_grad():
-            if self.config.clip_embed_dim == 512:
-                pooler_output = self.clip.get_image_features(pixel_values=img_clip)  # (B, 512)
-            else:
-                pooler_output = self.clip(pixel_values=img_clip).pooler_output  # (B, 768)
+            img_features = self.clip.get_image_features(pixel_values=img_clip)  # (B, 512)
 
-        return pooler_output
+            if text is not None:
+                tokens = self.clip_tokenizer(
+                    text, return_tensors="pt", padding=True, truncation=True, max_length=77
+                ).to(img.device)
+                text_features = self.clip.get_text_features(**tokens)  # (B, 512)
+                img_norm = img_features / img_features.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+                txt_norm = text_features / text_features.norm(dim=-1, keepdim=True).clamp(min=1e-6)
+                return (img_norm + txt_norm) / 2
+
+        return img_features
 
     # ── Forward ───────────────────────────────────────────────────────────────
 
@@ -282,7 +280,7 @@ class DualSystemVLA(nn.Module):
         if precomputed_ctx is not None:
             task_ctx = precomputed_ctx
         else:
-            task_ctx = self.encode_system2(batch[OBS_IMAGES][0])  # (B, clip_embed_dim)
+            task_ctx = self.encode_system2(batch[OBS_IMAGES][0], text=batch.get("task"))  # (B, clip_embed_dim)
         ctx_token = self.system2_proj(task_ctx)  # (B, dim_model)
 
         # ── VAE encoder (training only) ───────────────────────────────────────
