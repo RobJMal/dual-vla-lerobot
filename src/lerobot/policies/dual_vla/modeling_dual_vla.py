@@ -243,13 +243,19 @@ class DualSystemVLA(nn.Module):
         img_clip = (img_resized.clamp(0.0, 1.0) - self.clip_pixel_mean) / self.clip_pixel_std
 
         with torch.no_grad():
-            img_features = self.clip.get_image_features(pixel_values=img_clip)  # (B, 512)
+            # Call sub-models directly to guarantee plain tensor outputs regardless of
+            # the transformers version (get_image/text_features return type varies).
+            img_features = self.clip.visual_projection(
+                self.clip.vision_model(pixel_values=img_clip).pooler_output
+            )  # (B, 512)
 
             if text is not None:
                 tokens = self.clip_tokenizer(
                     text, return_tensors="pt", padding=True, truncation=True, max_length=77
                 ).to(img.device)
-                text_features = self.clip.get_text_features(**tokens)  # (B, 512)
+                text_features = self.clip.text_projection(
+                    self.clip.text_model(**tokens).pooler_output
+                )  # (B, 512)
                 img_norm = img_features / img_features.norm(dim=-1, keepdim=True).clamp(min=1e-6)
                 txt_norm = text_features / text_features.norm(dim=-1, keepdim=True).clamp(min=1e-6)
                 return (img_norm + txt_norm) / 2
