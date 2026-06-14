@@ -243,12 +243,12 @@ class DualSystemVLA(nn.Module):
         img_clip = (img_resized.clamp(0.0, 1.0) - self.clip_pixel_mean) / self.clip_pixel_std
 
         with torch.no_grad():
-            # Call sub-models directly to guarantee plain tensor outputs regardless of
-            # the transformers version (get_image/text_features return type varies).
-            img_features = self.clip.visual_projection(
-                self.clip.vision_model(pixel_values=img_clip).pooler_output
-            )  # (B, 512)
-
+            vit_out = self.clip.vision_model(pixel_values=img_clip).pooler_output  # (B, 768)
+            if self.config.clip_embed_dim == 768:
+                # Backward-compat: old checkpoints used raw ViT pooler output without projection.
+                return vit_out
+            # New checkpoints (clip_embed_dim=512): project to joint space and fuse with text.
+            img_features = self.clip.visual_projection(vit_out)  # (B, 512)
             if text is not None:
                 tokens = self.clip_tokenizer(
                     text, return_tensors="pt", padding=True, truncation=True, max_length=77
