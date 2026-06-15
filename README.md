@@ -1,177 +1,239 @@
-<p align="center">
-  <img alt="LeRobot, Hugging Face Robotics Library" src="./media/readme/lerobot-logo-thumbnail.png" width="100%">
-</p>
+# Dual-System VLA on LIBERO
 
-<div align="center">
+This repo is forked from [LeRobot](https://github.com/huggingface/lerobot) and extends it with a custom `dual_vla` policy — a frozen CLIP (System 2) conditioning a trimmed ACT transformer (System 1) — evaluated on the LIBERO-Spatial benchmark.
 
-[![Tests](https://github.com/huggingface/lerobot/actions/workflows/latest_deps_tests.yml/badge.svg?branch=main)](https://github.com/huggingface/lerobot/actions/workflows/latest_deps_tests.yml?query=branch%3Amain)
-[![Tests](https://github.com/huggingface/lerobot/actions/workflows/docker_publish.yml/badge.svg?branch=main)](https://github.com/huggingface/lerobot/actions/workflows/docker_publish.yml?query=branch%3Amain)
-[![Python versions](https://img.shields.io/pypi/pyversions/lerobot)](https://www.python.org/downloads/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://github.com/huggingface/lerobot/blob/main/LICENSE)
-[![Status](https://img.shields.io/pypi/status/lerobot)](https://pypi.org/project/lerobot/)
-[![Version](https://img.shields.io/pypi/v/lerobot)](https://pypi.org/project/lerobot/)
-[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.1-ff69b4.svg)](https://github.com/huggingface/lerobot/blob/main/CODE_OF_CONDUCT.md)
-[![Discord](https://img.shields.io/badge/Discord-Join_Us-5865F2?style=flat&logo=discord&logoColor=white)](https://discord.gg/q8Dzzpym3f)
+---
 
-</div>
+## Setup
 
-**LeRobot** aims to provide models, datasets, and tools for real-world robotics in PyTorch. The goal is to lower the barrier to entry so that everyone can contribute to and benefit from shared datasets and pretrained models.
+These instructions assume you're running on an Ubuntu 24.04 system with a GPU. Run everything from `/workspace/dual-vla-lerobot/`.
 
-🤗 A hardware-agnostic, Python-native interface that standardizes control across diverse platforms, from low-cost arms (SO-100) to humanoids.
-
-🤗 A standardized, scalable LeRobotDataset format (Parquet + MP4 or images) hosted on the Hugging Face Hub, enabling efficient storage, streaming and visualization of massive robotic datasets.
-
-🤗 State-of-the-art policies that have been shown to transfer to the real-world ready for training and deployment.
-
-🤗 Comprehensive support for the open-source ecosystem to democratize physical AI.
-
-## Quick Start
-
-LeRobot can be installed directly from PyPI.
+**1. Clone and install**
 
 ```bash
-pip install lerobot
-lerobot-info
+git clone https://github.com/RobJMal/lerobot.git /workspace/dual-vla-lerobot
+cd /workspace/dual-vla-lerobot
+uv sync --locked --extra libero
 ```
 
-> [!IMPORTANT]
-> For detailed installation guide, please see the [Installation Documentation](https://huggingface.co/docs/lerobot/installation).
+> `--extra libero` is required. Without it, `import libero` will fail at eval time even if you manually `pip install` it — `uv run` re-syncs from the lockfile and wipes manually installed packages.
 
-## Robots & Control
-
-<div align="center">
-  <img src="./media/readme/robots_control_video.webp" width="640px" alt="Reachy 2 Demo">
-</div>
-
-LeRobot provides a unified `Robot` class interface that decouples control logic from hardware specifics. It supports a wide range of robots and teleoperation devices.
-
-```python
-from lerobot.robots.myrobot import MyRobot
-
-# Connect to a robot
-robot = MyRobot(config=...)
-robot.connect()
-
-# Read observation and send action
-obs = robot.get_observation()
-action = model.select_action(obs)
-robot.send_action(action)
-```
-
-**Supported Hardware:** SO100, LeKiwi, Koch, HopeJR, OMX, EarthRover, Reachy2, Gamepads, Keyboards, Phones, OpenARM, Unitree G1.
-
-While these devices are natively integrated into the LeRobot codebase, the library is designed to be extensible. You can easily implement the Robot interface to utilize LeRobot's data collection, training, and visualization tools for your own custom robot.
-
-For detailed hardware setup guides, see the [Hardware Documentation](https://huggingface.co/docs/lerobot/integrate_hardware).
-
-## LeRobot Dataset
-
-To solve the data fragmentation problem in robotics, we utilize the **LeRobotDataset** format.
-
-- **Structure:** Synchronized MP4 videos (or images) for vision and Parquet files for state/action data.
-- **HF Hub Integration:** Explore thousands of robotics datasets on the [Hugging Face Hub](https://huggingface.co/lerobot).
-- **Tools:** Seamlessly delete episodes, split by indices/fractions, add/remove features, and merge multiple datasets.
-
-```python
-from lerobot.datasets.lerobot_dataset import LeRobotDataset
-
-# Load a dataset from the Hub
-dataset = LeRobotDataset("lerobot/aloha_mobile_cabinet")
-
-# Access data (automatically handles video decoding)
-episode_index=0
-print(f"{dataset[episode_index]['action'].shape=}\n")
-```
-
-Learn more about it in the [LeRobotDataset Documentation](https://huggingface.co/docs/lerobot/lerobot-dataset-v3)
-
-## SoTA Models
-
-LeRobot implements state-of-the-art policies in pure PyTorch, covering Imitation Learning, Reinforcement Learning, and Vision-Language-Action (VLA) models, with more coming soon. It also provides you with the tools to instrument and inspect your training process.
-
-<p align="center">
-  <img alt="Gr00t Architecture" src="./media/readme/VLA_architecture.jpg" width="640px">
-</p>
-
-Training a policy is as simple as running a script configuration:
+**2. Install system graphics libraries (required for headless GPU rendering)**
 
 ```bash
-lerobot-train \
-  --policy=act \
-  --dataset.repo_id=lerobot/aloha_mobile_cabinet
+apt-get update && apt-get install -y libgl1-mesa-glx libgles2 libegl-dev
 ```
 
-| Category                   | Models                                                                                                                                                                                                                  |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Imitation Learning**     | [ACT](./docs/source/policy_act_README.md), [Diffusion](./docs/source/policy_diffusion_README.md), [VQ-BeT](./docs/source/policy_vqbet_README.md), [Multitask DiT Policy](./docs/source/policy_multi_task_dit_README.md) |
-| **Reinforcement Learning** | [HIL-SERL](./docs/source/hilserl.mdx), [TDMPC](./docs/source/policy_tdmpc_README.md) & QC-FQL (coming soon)                                                                                                             |
-| **VLAs Models**            | [Pi0Fast](./docs/source/pi0fast.mdx), [Pi0.5](./docs/source/pi05.mdx), [GR00T N1.5](./docs/source/policy_groot_README.md), [SmolVLA](./docs/source/policy_smolvla_README.md), [XVLA](./docs/source/xvla.mdx)            |
-
-Similarly to the hardware, you can easily implement your own policy & leverage LeRobot's data collection, training, and visualization tools, and share your model to the HF Hub
-
-For detailed policy setup guides, see the [Policy Documentation](https://huggingface.co/docs/lerobot/bring_your_own_policies). For GPU/RAM requirements and expected training time per policy, see the [Compute Hardware Guide](https://huggingface.co/docs/lerobot/hardware_guide).
-
-## Inference & Evaluation
-
-Evaluate your policies in simulation or on real hardware using the unified evaluation script. LeRobot supports standard benchmarks like **LIBERO**, **MetaWorld** and more to come.
+**3. Authenticate**
 
 ```bash
-# Evaluate a policy on the LIBERO benchmark
-lerobot-eval \
-  --policy.path=lerobot/pi0_libero_finetuned \
-  --env.type=libero \
-  --env.task=libero_object \
-  --eval.n_episodes=10
+huggingface-cli login
+wandb login
 ```
 
-Learn how to implement your own simulation environment or benchmark and distribute it from the HF Hub by following the [EnvHub Documentation](https://huggingface.co/docs/lerobot/envhub)
+---
 
-## Resources
+## Training
 
-- **[Documentation](https://huggingface.co/docs/lerobot/index):** The complete guide to tutorials & API.
-- **[Chinese Tutorials: LeRobot+SO-ARM101中文教程-同济子豪兄](https://zihao-ai.feishu.cn/wiki/space/7589642043471924447)** Detailed doc for assembling, teleoperate, dataset, train, deploy. Verified by Seed Studio and 5 global hackathon players.
-- **[Discord](https://discord.gg/q8Dzzpym3f):** Join the `LeRobot` server to discuss with the community.
-- **[X](https://x.com/LeRobotHF):** Follow us on X to stay up-to-date with the latest developments.
-- **[Robot Learning Tutorial](https://huggingface.co/spaces/lerobot/robot-learning-tutorial):** A free, hands-on course to learn robot learning using LeRobot.
+Three ablation variants, each in its own tmux session. Replace `RobJMal` with your W&B entity if different.
 
-## Citation
-
-If you use LeRobot in your project, please cite the GitHub repository to acknowledge the ongoing development and contributors:
-
-```bibtex
-@misc{cadene2024lerobot,
-    author = {Cadene, Remi and Alibert, Simon and Soare, Alexander and Gallouedec, Quentin and Zouitine, Adil and Palma, Steven and Kooijmans, Pepijn and Aractingi, Michel and Shukor, Mustafa and Aubakirova, Dana and Russi, Martino and Capuano, Francesco and Pascal, Caroline and Choghari, Jade and Moss, Jess and Wolf, Thomas},
-    title = {LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch},
-    howpublished = "\url{https://github.com/huggingface/lerobot}",
-    year = {2024}
-}
+**disabled** — System 2 replaced with zeros (ACT baseline):
+```bash
+tmux new-session -d -s train_disabled \
+  'MUJOCO_GL=egl uv run lerobot-train \
+    --policy.type=dual_vla \
+    --policy.system2_mode=disabled \
+    --dataset.repo_id=lerobot/libero_spatial_image \
+    --batch_size=32 \
+    --steps=100000 \
+    --policy.device=cuda \
+    --output_dir=outputs/spatial_disabled \
+    --job_name=spatial_disabled \
+    --policy.push_to_hub=false \
+    --wandb.enable=true \
+    --wandb.project=dual-vla-ablation \
+    --wandb.entity=RobJMal \
+    2>&1 | tee outputs/spatial_disabled.log; bash'
 ```
 
-If you are referencing our research or the academic paper, please also cite our ICLR publication:
-
-<details>
-<summary><b>ICLR 2026 Paper</b></summary>
-
-```bibtex
-@inproceedings{cadenelerobot,
-  title={LeRobot: An Open-Source Library for End-to-End Robot Learning},
-  author={Cadene, Remi and Alibert, Simon and Capuano, Francesco and Aractingi, Michel and Zouitine, Adil and Kooijmans, Pepijn and Choghari, Jade and Russi, Martino and Pascal, Caroline and Palma, Steven and Shukor, Mustafa and Moss, Jess and Soare, Alexander and Aubakirova, Dana and Lhoest, Quentin and Gallou\'edec, Quentin and Wolf, Thomas},
-  booktitle={The Fourteenth International Conference on Learning Representations},
-  year={2026},
-  url={https://arxiv.org/abs/2602.22818}
-}
+**dynamic** — CLIP re-encodes scene + task every 10 steps (full system):
+```bash
+tmux new-session -d -s train_dynamic \
+  'MUJOCO_GL=egl uv run lerobot-train \
+    --policy.type=dual_vla \
+    --policy.system2_mode=dynamic \
+    --dataset.repo_id=lerobot/libero_spatial_image \
+    --batch_size=32 \
+    --steps=100000 \
+    --policy.device=cuda \
+    --output_dir=outputs/spatial_dynamic \
+    --job_name=spatial_dynamic \
+    --policy.push_to_hub=false \
+    --wandb.enable=true \
+    --wandb.project=dual-vla-ablation \
+    --wandb.entity=RobJMal \
+    2>&1 | tee outputs/spatial_dynamic.log; bash'
 ```
 
-</details>
+**frozen_initial** — CLIP encodes once at episode reset, held fixed:
+```bash
+tmux new-session -d -s train_frozen \
+  'MUJOCO_GL=egl uv run lerobot-train \
+    --policy.type=dual_vla \
+    --policy.system2_mode=frozen_initial \
+    --dataset.repo_id=lerobot/libero_spatial_image \
+    --batch_size=32 \
+    --steps=100000 \
+    --policy.device=cuda \
+    --output_dir=outputs/spatial_frozen \
+    --job_name=spatial_frozen \
+    --policy.push_to_hub=false \
+    --wandb.enable=true \
+    --wandb.project=dual-vla-ablation \
+    --wandb.entity=RobJMal \
+    2>&1 | tee outputs/spatial_frozen.log; bash'
+```
 
-## Contribute
+Monitor a session: `tmux attach -t train_disabled`. A healthy run shows `l1_loss` dropping from ~0.6 to ~0.13 over 100k steps.
 
-We welcome contributions from everyone in the community! To get started, please read our [CONTRIBUTING.md](https://github.com/huggingface/lerobot/blob/main/CONTRIBUTING.md) guide. Whether you're adding a new feature, improving documentation, or fixing a bug, your help and feedback are invaluable. We're incredibly excited about the future of open-source robotics and can't wait to work with you on what's next—thank you for your support!
+> `--policy.push_to_hub=false` is required when `--policy.repo_id` is not set — training errors on startup otherwise.
 
-<p align="center">
-  <img alt="SO101 Video" src="./media/readme/so100_video.webp" width="640px">
-</p>
+---
 
-<div align="center">
-<sub>Built by the <a href="https://huggingface.co/lerobot">LeRobot</a> team at <a href="https://huggingface.co">Hugging Face</a> with ❤️</sub>
-</div>
+## Evaluation
+
+Run after training completes. Each eval takes ~45 min on a modern GPU (200 episodes, 10 parallel envs).
+
+**Important — read before running:**
+- Always pass `--policy.type=dual_vla`. Without it draccus cannot parse the config and errors immediately.
+- Always pass `--rename_map`. The eval environment names the wrist camera `image2` but the training dataset calls it `wrist_image`. Without this the eval crashes with a feature mismatch error.
+- Use `--env.task=libero_spatial`, not `--env.task_suite` (that flag does not exist).
+- `MUJOCO_GL=egl` is required for headless GPU rendering on Linux.
+
+**disabled:**
+```bash
+tmux new-session -d -s eval_disabled \
+  'MUJOCO_GL=egl uv run lerobot-eval \
+    --policy.type=dual_vla \
+    --policy.pretrained_path=outputs/spatial_disabled/checkpoints/100000/pretrained_model \
+    --env.type=libero \
+    --env.task=libero_spatial \
+    --eval.n_episodes=20 \
+    --eval.batch_size=10 \
+    --rename_map='"'"'{"observation.images.image2": "observation.images.wrist_image"}'"'"' \
+    2>&1 | tee outputs/eval_spatial_disabled.log; bash'
+```
+
+**dynamic:**
+```bash
+tmux new-session -d -s eval_dynamic \
+  'MUJOCO_GL=egl uv run lerobot-eval \
+    --policy.type=dual_vla \
+    --policy.pretrained_path=outputs/spatial_dynamic/checkpoints/100000/pretrained_model \
+    --env.type=libero \
+    --env.task=libero_spatial \
+    --eval.n_episodes=20 \
+    --eval.batch_size=10 \
+    --rename_map='"'"'{"observation.images.image2": "observation.images.wrist_image"}'"'"' \
+    2>&1 | tee outputs/eval_spatial_dynamic.log; bash'
+```
+
+Results are written to `outputs/eval/<date>/<timestamp>_libero_dual_vla/eval_info.json`. The `pc_success` field under `per_group.libero_spatial` gives the overall success rate.
+
+---
+
+## Downloading pretrained checkpoints
+
+To skip training and run eval directly from uploaded checkpoints:
+
+```bash
+huggingface-cli download RobJMal/dual-vla-spatial_disabled \
+  --local-dir outputs/spatial_disabled
+
+huggingface-cli download RobJMal/dual-vla-spatial_dynamic \
+  --local-dir outputs/spatial_dynamic
+```
+
+Then run the eval commands above pointing to the downloaded path.
+
+---
+
+## Results
+
+| Variant | Overall | Task 2 | Task 6 | Task 3 |
+|---------|--------:|-------:|-------:|-------:|
+| Disabled | 0% | 0% | 0% | 0% |
+| Dynamic | 9% | **60%** | 20% | 10% |
+
+---
+
+## Report
+
+The full research report (architecture, interface design, ablation analysis) is at [media/deliverable/dual_system_report.pdf](media/deliverable/dual_system_report.pdf).
+
+---
+
+## Rollout Videos
+
+Sample rollouts are in [media/deliverable/](media/deliverable/). Same episode numbers are used across variants for direct comparison.
+
+### Dynamic (System 2 active)
+
+**Task 2** — 60% success rate
+
+| 🟢 Episode 000 | 🟢 Episode 002 | 🟢 Episode 004 |
+|:--------------:|:--------------:|:--------------:|
+| ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-001_episode-000_libero-spatial-task-2.gif) | ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-002_episode-002_libero-spatial-task-2.gif) | ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-003_episode-004_libero-spatial-task-2.gif) |
+
+**Task 3** — 10% success rate
+
+| 🔴 Episode 000 | 🟢 Episode 001 | 🔴 Episode 002 |
+|:--------------:|:--------------:|:--------------:|
+| ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-004_episode-000_libero-spatial-task-3.gif) | ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-005_episode-001_libero-spatial-task-3.gif) | ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-006_episode-002_libero-spatial-task-3.gif) |
+
+**Task 6** — 20% success rate
+
+| 🟢 Episode 004 | 🟢 Episode 005 | 🔴 Episode 000 |
+|:--------------:|:--------------:|:--------------:|
+| ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-007_episode-004_libero-spatial-task-6.gif) | ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-008_episode-005_libero-spatial-task-6.gif) | ![](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-009_episode-000_libero-spatial-task-6.gif) |
+
+### Disabled (System 2 = zeros, baseline)
+
+**Task 2**
+
+| 🔴 Episode 000 | 🔴 Episode 002 | 🔴 Episode 004 |
+|:--------------:|:--------------:|:--------------:|
+| ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-001_episode-000_libero-spatial-task-2.gif) | ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-002_episode-002_libero-spatial-task-2.gif) | ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-003_episode-004_libero-spatial-task-2.gif) |
+
+**Task 3**
+
+| 🔴 Episode 000 | 🔴 Episode 001 | 🔴 Episode 002 |
+|:--------------:|:--------------:|:--------------:|
+| ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-004_episode-000_libero-spatial-task-3.gif) | ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-005_episode-001_libero-spatial-task-3.gif) | ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-006_episode-002_libero-spatial-task-3.gif) |
+
+**Task 6**
+
+| 🔴 Episode 004 | 🔴 Episode 005 | 🔴 Episode 000 |
+|:--------------:|:--------------:|:--------------:|
+| ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-007_episode-004_libero-spatial-task-6.gif) | ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-008_episode-005_libero-spatial-task-6.gif) | ![](media/deliverable/dual_vla_disabled/dual-vla-disabled-009_episode-000_libero-spatial-task-6.gif) |
+
+---
+
+## Dataset
+
+- **Training:** `lerobot/libero_spatial_image` (use this exact name — `lerobot/libero_spatial` does not exist on the Hub)
+- **Eval environment:** LIBERO-Spatial (10 tasks, 20 episodes each)
+
+---
+
+## Troubleshooting
+
+| Error | Fix |
+|-------|-----|
+| `No module named 'libero'` | Run `uv sync --locked --extra libero`, not `pip install libero` |
+| `libEGL.so.0 not found` | `apt-get install -y libgl1-mesa-glx libgles2 libegl-dev` |
+| `mat1 and mat2 shapes cannot be multiplied` | Pod is running old code — run `git pull` then retry |
+| `unrecognized arguments: --env.task_suite` | Use `--env.task=libero_spatial` instead |
+| `Expected a dict with a 'type' key` | Add `--policy.type=dual_vla` to the eval command |
+| `Missing features: ['observation.images.wrist_image']` | Add `--rename_map='{"observation.images.image2": "observation.images.wrist_image"}'` |
+| `model.safetensors not found` | Check the full checkpoint path — HF downloads may nest subdirectories |
