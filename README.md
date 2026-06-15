@@ -167,6 +167,52 @@ Then run the eval commands above pointing to the downloaded path.
 
 ---
 
+## Report
+
+The full research report (architecture, interface design, ablation analysis) is at [media/deliverable/dual_system_report.pdf](media/deliverable/dual_system_report.pdf).
+
+---
+
+## Rollout Videos
+
+Sample rollouts are in [media/deliverable/](media/deliverable/). Same episode numbers are used across variants for direct comparison.
+
+### Dynamic (System 2 active)
+
+**Task 2** — highest success rate (60%)
+- [Episode 000](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-001_episode-000_libero-spatial-task-2.mp4)
+- [Episode 002](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-002_episode-002_libero-spatial-task-2.mp4)
+- [Episode 004](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-003_episode-004_libero-spatial-task-2.mp4)
+
+**Task 3** — 10% success rate
+- [Episode 000](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-004_episode-000_libero-spatial-task-3.mp4)
+- [Episode 001](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-005_episode-001_libero-spatial-task-3.mp4) ✓ success
+- [Episode 002](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-006_episode-002_libero-spatial-task-3.mp4)
+
+**Task 6** — 20% success rate
+- [Episode 004](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-007_episode-004_libero-spatial-task-6.mp4) ✓ success
+- [Episode 005](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-008_episode-005_libero-spatial-task-6.mp4) ✓ success
+- [Episode 000](media/deliverable/dual_vla_dynamic/dual-vla-dynamic-009_episode-000_libero-spatial-task-6.mp4)
+
+### Disabled (System 2 = zeros, baseline)
+
+**Task 2**
+- [Episode 000](media/deliverable/dual_vla_disabled/dual-vla-disabled-001_episode-000_libero-spatial-task-2.mp4)
+- [Episode 002](media/deliverable/dual_vla_disabled/dual-vla-disabled-002_episode-002_libero-spatial-task-2.mp4)
+- [Episode 004](media/deliverable/dual_vla_disabled/dual-vla-disabled-003_episode-004_libero-spatial-task-2.mp4)
+
+**Task 3**
+- [Episode 000](media/deliverable/dual_vla_disabled/dual-vla-disabled-004_episode-000_libero-spatial-task-3.mp4)
+- [Episode 001](media/deliverable/dual_vla_disabled/dual-vla-disabled-005_episode-001_libero-spatial-task-3.mp4)
+- [Episode 002](media/deliverable/dual_vla_disabled/dual-vla-disabled-006_episode-002_libero-spatial-task-3.mp4)
+
+**Task 6**
+- [Episode 004](media/deliverable/dual_vla_disabled/dual-vla-disabled-007_episode-004_libero-spatial-task-6.mp4)
+- [Episode 005](media/deliverable/dual_vla_disabled/dual-vla-disabled-008_episode-005_libero-spatial-task-6.mp4)
+- [Episode 000](media/deliverable/dual_vla_disabled/dual-vla-disabled-009_episode-000_libero-spatial-task-6.mp4)
+
+---
+
 ## Dataset
 
 - **Training:** `lerobot/libero_spatial_image` (use this exact name — `lerobot/libero_spatial` does not exist on the Hub)
