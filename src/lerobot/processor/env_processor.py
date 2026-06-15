@@ -42,23 +42,22 @@ class LiberoProcessorStep(ObservationProcessorStep):
     -   Maps the concatenated state to `"observation.state"`.
 
     **Image Processing:**
-    -   Rotates images by 180 degrees by flipping both height and width dimensions.
-    -   This accounts for the HuggingFaceVLA/libero camera orientation convention.
+    -   When `flip_images=True` (default), rotates images 180° to match the
+        HuggingFaceVLA/libero dataset convention. Set to False when the policy's
+        training pipeline did not include this flip (e.g. dual_vla).
     """
+
+    flip_images: bool = True
 
     def _process_observation(self, observation):
         """
         Processes both image and robot_state observations from LIBERO.
         """
         processed_obs = observation.copy()
-        for key in list(processed_obs.keys()):
-            if key.startswith(f"{OBS_IMAGES}."):
-                img = processed_obs[key]
-
-                # Flip both H and W
-                img = torch.flip(img, dims=[2, 3])
-
-                processed_obs[key] = img
+        if self.flip_images:
+            for key in list(processed_obs.keys()):
+                if key.startswith(f"{OBS_IMAGES}."):
+                    processed_obs[key] = torch.flip(processed_obs[key], dims=[2, 3])
         # Process robot_state into a flat state vector
         observation_robot_state_str = OBS_PREFIX + "robot_state"
         if observation_robot_state_str in processed_obs:

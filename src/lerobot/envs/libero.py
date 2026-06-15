@@ -209,6 +209,7 @@ class LiberoEnv(gym.Env):
             self.observation_space = spaces.Dict(
                 {
                     "pixels": spaces.Dict(images),
+                    "state": spaces.Box(low=-np.inf, high=np.inf, shape=(8,), dtype=np.float64),
                     "robot_state": spaces.Dict(
                         {
                             "eef": spaces.Dict(
@@ -317,6 +318,15 @@ class LiberoEnv(gym.Env):
                     f"Got eef_pos={eef_pos is not None}, eef_quat={eef_quat is not None}, "
                     f"gripper_qpos={gripper_qpos is not None}"
                 )
+            # Compute axis-angle from quaternion [x,y,z,w] and concatenate into
+            # observation.state [8] = eef_pos(3) + axis_angle(3) + gripper_qpos(2),
+            # matching the lerobot/libero_10 dataset's observation.state format.
+            q = eef_quat  # [x, y, z, w]
+            angle = 2.0 * np.arccos(np.clip(q[3], -1.0, 1.0))
+            s = np.sin(angle / 2.0)
+            axis = q[:3] / s if abs(s) > 1e-8 else np.array([0.0, 0.0, 1.0])
+            axis_angle = axis * angle
+            obs["state"] = np.concatenate([eef_pos, axis_angle, gripper_qpos])
             return obs
 
         raise NotImplementedError(

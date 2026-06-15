@@ -45,6 +45,8 @@ from lerobot.utils.constants import (
 from lerobot.utils.feature_utils import dataset_to_policy_features
 
 from .act.configuration_act import ACTConfig
+from .dual_vla.configuration_dual_vla import DualVLAConfig
+from .dual_vla_diffusion.configuration_dual_vla_diffusion import DualVLADiffusionConfig
 from .diffusion.configuration_diffusion import DiffusionConfig
 from .eo1.configuration_eo1 import EO1Config
 from .gaussian_actor.configuration_gaussian_actor import GaussianActorConfig
@@ -102,6 +104,10 @@ def get_policy_class(name: str) -> type[PreTrainedPolicy]:
         from .tdmpc.modeling_tdmpc import TDMPCPolicy
 
         return TDMPCPolicy
+    elif name == "dual_vla_diffusion":
+        from .dual_vla_diffusion.modeling_dual_vla_diffusion import DualVLADiffusionPolicy
+
+        return DualVLADiffusionPolicy
     elif name == "diffusion":
         from .diffusion.modeling_diffusion import DiffusionPolicy
 
@@ -110,6 +116,10 @@ def get_policy_class(name: str) -> type[PreTrainedPolicy]:
         from .act.modeling_act import ACTPolicy
 
         return ACTPolicy
+    elif name == "dual_vla":
+        from .dual_vla.modeling_dual_vla import DualVLAPolicy
+
+        return DualVLAPolicy
     elif name == "multi_task_dit":
         from .multi_task_dit.modeling_multi_task_dit import MultiTaskDiTPolicy
 
@@ -190,10 +200,14 @@ def make_policy_config(policy_type: str, **kwargs) -> PreTrainedConfig:
     """
     if policy_type == "tdmpc":
         return TDMPCConfig(**kwargs)
+    elif policy_type == "dual_vla_diffusion":
+        return DualVLADiffusionConfig(**kwargs)
     elif policy_type == "diffusion":
         return DiffusionConfig(**kwargs)
     elif policy_type == "act":
         return ACTConfig(**kwargs)
+    elif policy_type == "dual_vla":
+        return DualVLAConfig(**kwargs)
     elif policy_type == "multi_task_dit":
         return MultiTaskDiTConfig(**kwargs)
     elif policy_type == "vqbet":
@@ -331,6 +345,14 @@ def make_pre_post_processors(
             dataset_stats=kwargs.get("dataset_stats"),
         )
 
+    elif isinstance(policy_cfg, DualVLADiffusionConfig):
+        from .diffusion.processor_diffusion import make_diffusion_pre_post_processors
+
+        processors = make_diffusion_pre_post_processors(
+            config=policy_cfg,
+            dataset_stats=kwargs.get("dataset_stats"),
+        )
+
     elif isinstance(policy_cfg, DiffusionConfig):
         from .diffusion.processor_diffusion import make_diffusion_pre_post_processors
 
@@ -343,6 +365,14 @@ def make_pre_post_processors(
         from .act.processor_act import make_act_pre_post_processors
 
         processors = make_act_pre_post_processors(
+            config=policy_cfg,
+            dataset_stats=kwargs.get("dataset_stats"),
+        )
+
+    elif isinstance(policy_cfg, DualVLAConfig):
+        from .dual_vla.processor_dual_vla import make_dual_vla_pre_post_processors
+
+        processors = make_dual_vla_pre_post_processors(
             config=policy_cfg,
             dataset_stats=kwargs.get("dataset_stats"),
         )
@@ -525,7 +555,25 @@ def make_policy(
         features = env_to_policy_features(env_cfg)
 
     cfg.output_features = {key: ft for key, ft in features.items() if ft.type is FeatureType.ACTION}
-    if not cfg.input_features:
+    if cfg.pretrained_path:
+        try:
+            pretrained_cfg = PreTrainedConfig.from_pretrained(str(cfg.pretrained_path))
+            # Replace the cmd config with the checkpoint config so all architecture params
+            # (clip_embed_dim, dim_model, latent_dim, etc.) match the saved weights exactly.
+            # Only preserve runtime-only fields from the command line.
+            pretrained_cfg.device = cfg.device
+            pretrained_cfg.pretrained_path = cfg.pretrained_path
+            pretrained_cfg.output_features = cfg.output_features
+            if not pretrained_cfg.input_features:
+                pretrained_cfg.input_features = {
+                    key: ft for key, ft in features.items() if key not in pretrained_cfg.output_features
+                }
+            cfg = pretrained_cfg
+        except Exception as e:
+            logging.debug(f"Could not load config from pretrained path: {e}")
+            if not cfg.input_features:
+                cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
+    elif not cfg.input_features:
         cfg.input_features = {key: ft for key, ft in features.items() if key not in cfg.output_features}
 
     # Store action feature names for relative_exclude_joints support

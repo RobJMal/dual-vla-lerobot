@@ -403,7 +403,73 @@ Single-task grasp-and-place with 50 clean episodes: ACT should reach **> 70% suc
 
 ---
 
-## 9. Further reading & resources
+## 9. Dual-System VLA (dual_vla) on LIBERO Spatial
+
+This section covers training and evaluating the custom `dual_vla` policy — a frozen CLIP (System 2) conditioning a trimmed ACT transformer (System 1) — on the `lerobot/libero_spatial_image` dataset.
+
+### 9.1 Prerequisites
+
+```bash
+# Authenticate (required to download dataset and upload checkpoints)
+huggingface-cli login
+wandb login
+```
+
+### 9.2 Training (one variant at a time on a single GPU)
+
+Three ablation variants must be trained: `dynamic` (CLIP re-encodes every 10 steps), `frozen_initial` (CLIP encodes once at reset), and `disabled` (zeros — plain ACT baseline).
+
+Run each in its own tmux session. Start the next only after the previous finishes (~2–4 h each on an A40).
+
+**disabled** (fastest — no CLIP forward pass):
+```bash
+tmux new-session -d -s train_disabled 'cd /workspace/dual-vla-lerobot && MUJOCO_GL=egl uv run lerobot-train --policy.type=dual_vla --policy.system2_mode=disabled --dataset.repo_id=lerobot/libero_spatial_image --batch_size=32 --steps=100000 --policy.device=cuda --output_dir=outputs/spatial_disabled --job_name=spatial_disabled --policy.push_to_hub=false --wandb.enable=true --wandb.project=dual-vla-ablation --wandb.entity=RobJMal 2>&1 | tee outputs/spatial_disabled.log; bash'
+```
+
+**frozen_initial**:
+```bash
+tmux new-session -d -s train_frozen 'cd /workspace/dual-vla-lerobot && MUJOCO_GL=egl uv run lerobot-train --policy.type=dual_vla --policy.system2_mode=frozen_initial --dataset.repo_id=lerobot/libero_spatial_image --batch_size=32 --steps=100000 --policy.device=cuda --output_dir=outputs/spatial_frozen --job_name=spatial_frozen --policy.push_to_hub=false --wandb.enable=true --wandb.project=dual-vla-ablation --wandb.entity=RobJMal 2>&1 | tee outputs/spatial_frozen.log; bash'
+```
+
+**dynamic** (full system):
+```bash
+tmux new-session -d -s train_dynamic 'cd /workspace/dual-vla-lerobot && MUJOCO_GL=egl uv run lerobot-train --policy.type=dual_vla --policy.system2_mode=dynamic --dataset.repo_id=lerobot/libero_spatial_image --batch_size=32 --steps=100000 --policy.device=cuda --output_dir=outputs/spatial_dynamic --job_name=spatial_dynamic --policy.push_to_hub=false --wandb.enable=true --wandb.project=dual-vla-ablation --wandb.entity=RobJMal 2>&1 | tee outputs/spatial_dynamic.log; bash'
+```
+
+Monitor: `tmux attach -t train_disabled` (or `_frozen`, `_dynamic`). Check loss on wandb at `wandb.ai/RobJMal/dual-vla-ablation`.
+
+A healthy run shows l1_loss dropping from ~0.6 → ~0.13 over 100k steps.
+
+### 9.3 Evaluation
+
+After each variant finishes, run eval with the final checkpoint:
+
+```bash
+MUJOCO_GL=egl uv run lerobot-eval \
+  --policy.type=dual_vla \
+  --policy.pretrained_path=outputs/spatial_<VARIANT>/checkpoints/100000/pretrained_model \
+  --env.type=libero \
+  --eval.n_episodes=50 \
+  --eval.batch_size=10 \
+  --eval.use_async_envs=false \
+  --output_dir=outputs/eval_spatial_<VARIANT> \
+  --job_name=eval_spatial_<VARIANT> \
+  --rename_map='{"observation.images.image2": "observation.images.wrist_image"}'
+```
+
+Replace `<VARIANT>` with `disabled`, `frozen`, or `dynamic`. Each eval run takes ~2 h on an A40.
+
+### 9.4 Notes
+
+- **Dataset name:** `lerobot/libero_spatial_image` (not `lerobot/libero_spatial` — that repo does not exist).
+- **GPU utilization during eval will be ~2%** — normal. LIBERO MuJoCo simulation is the bottleneck, not the model.
+- **`--policy.push_to_hub=false`** is required when `--policy.repo_id` is not set, otherwise training errors on startup.
+- **`MUJOCO_GL=egl`** is required for headless GPU rendering on Linux pods.
+- The `rename_map` remaps the wrist camera key from the env (`image2`) to the training key (`wrist_image`).
+
+---
+
+## 10. Further reading & resources
 
 - **Getting started:** [`installation.mdx`](./docs/source/installation.mdx) · [`il_robots.mdx`](./docs/source/il_robots.mdx) · [What makes a good dataset](https://huggingface.co/blog/lerobot-datasets)
 - **Per-policy docs:** browse [`docs/source/*.mdx`](./docs/source/) (policies, hardware, benchmarks, advanced training).
